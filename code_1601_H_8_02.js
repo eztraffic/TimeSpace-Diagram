@@ -3054,16 +3054,16 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  // Helper function to get the page zoom, as used elsewhere in the application
+  // 輔助函式：取得頁面縮放比例
   function getZoomFactor() {
     return parseFloat(document.body.style.zoom) || 1;
   }
 
-  // Event listener for mouse movement on the canvas
+  // 滑鼠在畫布上移動的事件監聽
   stCanvas.addEventListener("mousemove", function(e) {
     const zoomFactor = getZoomFactor();
 
-    // --- Start: Recalculate scaling factors (logic from updateSpacetimeOffscreen) ---
+    // --- 計算座標數值 (此部分已正確) ---
     if (spawnPointsList.length === 0 || !spawnPointsList[selectedSpawnIndex]) {
       tooltip.style.display = "none";
       return;
@@ -3074,39 +3074,43 @@ document.addEventListener("DOMContentLoaded", () => {
       tooltip.style.display = "none";
       return;
     }
-
     const maxTime = fixedSimulationDuration / timeScale;
     const maxDistance = roads.reduce((sum, road) => sum + road.distance, 0);
-
     const timeScaleFactor = stCanvas.width / maxTime;
     const margin = 15;
     const drawableHeight = stCanvas.height - 2 * margin;
     const distanceScale = maxDistance > 0 ? drawableHeight / maxDistance : 0;
-    // --- End: Recalculate scaling factors ---
-
-    // Get mouse position relative to the canvas, CORRECTED FOR ZOOM
     const rect = stCanvas.getBoundingClientRect();
     const mouseX = (e.clientX - rect.left) / zoomFactor;
     const mouseY = (e.clientY - rect.top) / zoomFactor;
-
-    // Convert pixel coordinates back to simulation time and distance
     const timeInSeconds = (mouseX / timeScaleFactor) * timeScale;
     const distanceFromOrigin = (stCanvas.height - margin - mouseY) / distanceScale;
+    // --- 計算結束 ---
 
-    // Check if the cursor is within the valid chart area
+    // 檢查游標是否在圖表有效範圍內
     if (distanceFromOrigin >= 0 && distanceFromOrigin <= maxDistance && timeInSeconds >= 0 && timeInSeconds <= fixedSimulationDuration) {
-      // Update tooltip content and position
       tooltip.innerHTML = `(${timeInSeconds.toFixed(1)} 秒, ${distanceFromOrigin.toFixed(1)} 公尺)`;
       tooltip.style.display = 'block';
       
-      // MODIFICATION: Use clientX/Y for positioning relative to the viewport.
-      // This works perfectly with position:fixed to keep the tooltip next to the cursor.
-      tooltip.style.left = (e.clientX + 0) + 'px';
-      tooltip.style.top = (e.clientY + 0) + 'px';
+      // --- 定位 Tooltip (最終修正) ---
+      // 滑鼠事件的 pageX/pageY 是物理像素座標。
+      // 在一個被 zoom 的元素內部，CSS 的 top/left 需要的是邏輯像素座標。
+      // 從物理像素轉換到邏輯像素，我們需要除以 zoomFactor。
+      const logicalX = e.pageX / zoomFactor;
+      const logicalY = e.pageY / zoomFactor;
+
+      // 使用轉換後的邏輯座標來定位，並加上一個小偏移量避免 tooltip 擋住鼠標本身
+      tooltip.style.left = (logicalX + 15) + 'px';
+      tooltip.style.top = (logicalY + 15) + 'px';
 
     } else {
-      // Hide tooltip if the cursor is outside the chart area
+      // 若游標在圖表外，則隱藏 tooltip
       tooltip.style.display = 'none';
     }
+  });
+
+  // 滑鼠離開畫布時隱藏 tooltip
+  stCanvas.addEventListener("mouseout", function() {
+    tooltip.style.display = "none";
   });
 });
