@@ -893,6 +893,7 @@ designCanvas.addEventListener("click", function(e) {
       document.getElementById("circleInfo").textContent = "未選取";
     }
     drawDesignGrid();
+	reFresh(); // 【增加此行】確保在選取或取消選取圓點後，都能更新時空圖
     return;
   }
 
@@ -2299,7 +2300,7 @@ simIntersections = gridCircles
 
   // 更新設計區（固定間距）
   drawDesignGrid();
-  generateSimSpawnPoints();
+  generateSimSpawnPoints();  
   precomputeTrafficLightStates();
   updateSpacetimeOffscreen();
   renderSpawnDataDisplay();
