@@ -1330,6 +1330,8 @@ document.getElementById("masterName").addEventListener("input", function() {
   updateAllRefMasterDropdowns(); // 同步更新所有下拉清單
 });
 
+
+
 document.getElementById("offset").addEventListener("input", function() {
   if (!this.disabled) { // 僅在非唯讀時更新
     selectedCircle.offset = parseInt(this.value) || 0;
@@ -1337,12 +1339,8 @@ document.getElementById("offset").addEventListener("input", function() {
       updateRefOffsets(selectedCircle);
     }
   }
-});
-
-document.getElementById("offset").addEventListener("input", function() {
-  if (!this.disabled) { // 僅在非唯讀時更新
-    selectedCircle.offset = parseInt(this.value) || 0;
-  }
+  drawDesignGrid(); // 即時更新畫布上的時差數字
+  reFresh(); // 更新時空圖
 });
 
 function updateMasterUI(circle) {
@@ -1387,46 +1385,6 @@ function updateAllRefMasterDropdowns() {
 }
 
 // 修改表單提交事件以保存鎖定狀態
-document.getElementById("circleForm").addEventListener("submit", function(e) {
-  e.preventDefault();
-  if (selectedCircle) {
-    const isSpawn = document.getElementById("isSpawn").checked;
-    const phaseCount = isSpawn ? 1 : parseInt(document.getElementById("phaseCount").value);
-    const newPhases = [];
-
-    for (let i = 0; i < phaseCount; i++) {
-      let activeDirections = allDirections.filter(dir => 
-        document.querySelector(`input[name="phase${i}_dir_${dir}"]`).checked
-      );
-      let greenTime = parseFloat(document.querySelector(`input[name="phase${i}_green"]`).value);
-      let redTime = parseFloat(document.querySelector(`input[name="phase${i}_red"]`).value);
-      
-      if (isSpawn) {
-        const spawnDirection = document.getElementById("spawnDirection").value;
-        switch (spawnDirection) {
-          case 'E': activeDirections = ['E', 'W']; break;
-          case 'W': activeDirections = ['W', 'E']; break;
-          case 'N': activeDirections = ['N', 'S']; break;
-          case 'S': activeDirections = ['S', 'N']; break;
-          case 'NE': activeDirections = ['NE', 'SW']; break;
-          case 'SW': activeDirections = ['SW', 'NE']; break;
-          case 'SE': activeDirections = ['SE', 'NW']; break;
-          case 'NW': activeDirections = ['NW', 'SE']; break;
-          default: activeDirections = [spawnDirection];
-        }
-        greenTime = 1;
-        redTime = 0;
-      }
-      
-      newPhases.push({ activeDirections, greenTime, redTime });
-    }
-    
-    selectedCircle.phases = newPhases;
-    drawDesignGrid();
-    reFresh();
-    updateCycleTimeDisplay(selectedCircle); // Update cycle time after submission
-  }
-});
 
 document.getElementById("phaseCount").addEventListener("change", function() {
   const isSpawn = document.getElementById("isSpawn").checked;
@@ -1447,6 +1405,7 @@ document.getElementById("phaseCount").addEventListener("change", function() {
 
 // 修改 change 事件以即時更新鎖定狀態
 
+// (取代) 修改後的 change 事件監聽器，更簡潔且修正了 ID 錯誤
 document.getElementById("circleForm").addEventListener("change", function(e) {
   if (!selectedCircle) return;
 
@@ -1463,25 +1422,15 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
       : `(${selectedCircle.row},${selectedCircle.col})`;
     document.getElementById("circleInfo").textContent = `路口位置：${displayName}`;
     updateSpawnPointSelector();
+    return; // 處理完畢，提前退出
   }
 
-  // 更新主燈號和引用主燈號
-  if (target.id === "isMaster") {
-    selectedCircle.isMaster = target.checked;
-    document.getElementById("masterName").disabled = !target.checked;
-    document.getElementById("refMaster").disabled = target.checked;
-    if (target.checked) {
-      selectedCircle.refMaster = null;
-      document.getElementById("refMaster").value = "";
-    }
-  }
-
-  if (target.id === "masterName") {
-    selectedCircle.masterName = target.value;
-  }
-
-  if (target.id === "refMaster") {
-    selectedCircle.refMaster = target.value || null;
+  // 更新鎖定狀態
+  if (target.id === "isLocked") {
+    selectedCircle.locked = target.checked;
+    drawDesignGrid();
+    reFresh();
+    return;
   }
 
   // 更新生成點相關屬性
@@ -1493,7 +1442,7 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
       selectedCircle.phases = [{
         activeDirections: getSpawnActiveDirections(spawnDirection),
         leftTurnDirections: [],
-        rightTurnDirections: [], // 新增：右轉方向
+        rightTurnDirections: [],
         greenTime: 1,
         redTime: 0
       }];
@@ -1507,23 +1456,41 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
     }
     renderPhases(selectedCircle.phases.length, selectedCircle.phases, target.checked, spawnDirection);
     updateCycleTimeDisplay(selectedCircle);
+    reFresh();
+    return;
   }
-
+  
+  if (target.id === "spawnFreq") { // 修正 ID
+    const frequency = parseFloat(target.value) || 5;
+    selectedCircle.spawnFrequency = Math.max(0, frequency);
+    reFresh();
+    return;
+  }
+  
   if (target.id === "spawnDirection") {
-    if (isSpawn) {
-      selectedCircle.spawnDirection = target.value;
-      selectedCircle.phases = [{
-        activeDirections: getSpawnActiveDirections(target.value),
-        leftTurnDirections: [],
-        rightTurnDirections: [], // 新增：右轉方向
-        greenTime: 1,
-        redTime: 0
-      }];
-      renderPhases(1, selectedCircle.phases, true, target.value);
-      updateCycleTimeDisplay(selectedCircle);
+    if (isSpawn) { // 只有在 isSpawn 啟用時才更新
+        selectedCircle.spawnDirection = target.value;
+        selectedCircle.phases = [{
+            activeDirections: getSpawnActiveDirections(target.value),
+            leftTurnDirections: [],
+            rightTurnDirections: [],
+            greenTime: 1,
+            redTime: 0
+        }];
+        renderPhases(1, selectedCircle.phases, true, target.value);
+        updateCycleTimeDisplay(selectedCircle);
+        reFresh();
     }
+    return;
+  }
+  
+  if (target.id === "spawnName") {
+    selectedCircle.spawnName = target.value;
+    reFresh();
+    return;
   }
 
+  // 更新時相數量
   if (target.id === "phaseCount" && !isSpawn) {
     const newCount = parseInt(target.value) || 1;
     const currentCount = selectedCircle.phases.length;
@@ -1532,7 +1499,7 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
         selectedCircle.phases.push({
           activeDirections: [],
           leftTurnDirections: [],
-          rightTurnDirections: [], // 新增：右轉方向
+          rightTurnDirections: [],
           greenTime: 10,
           redTime: 1
         });
@@ -1542,30 +1509,41 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
     }
     renderPhases(newCount, selectedCircle.phases, false, spawnDirection);
     updateCycleTimeDisplay(selectedCircle);
+    reFresh();
+    return;
   }
 
-  // 更新鎖定狀態
-  if (target.id === "lockCircle") {
-    selectedCircle.locked = target.checked;
-    drawDesignGrid();
+  // 更新主燈號、引用等相關邏輯
+  if (target.id === 'isMaster' || target.id === 'masterName' || target.id === 'refMaster' || target.id === 'isLocked') {
+      selectedCircle.isMaster = document.getElementById("isMaster").checked;
+      selectedCircle.masterName = document.getElementById("masterName").value;
+      selectedCircle.refMaster = document.getElementById("refMaster").value || null;
+      selectedCircle.locked = document.getElementById("isLocked").checked;
+      
+      if (selectedCircle.isMaster || selectedCircle.locked) {
+        selectedCircle.refMaster = null; // 主燈號或鎖定路口不能引用其他主燈號
+      }
+      
+      if(selectedCircle.refMaster){
+         const masterCircle = gridCircles.find(c => `${c.row}-${c.col}` === selectedCircle.refMaster);
+         if(masterCircle){
+            selectedCircle.offset = masterCircle.offset;
+            document.getElementById("offset").value = selectedCircle.offset;
+         }
+      }
+
+      updateMasterUI(selectedCircle);
+      updateAllRefMasterDropdowns();
+      drawDesignGrid();
+      reFresh();
+      return;
   }
 
-  // 更新偏移值
-  if (target.id === "offsetInput") {
-    const offset = parseFloat(target.value) || 0;
-    selectedCircle.offset = Math.max(0, offset);
-    drawDesignGrid();
+  // 如果事件源自時相內部（綠燈、紅燈、方向勾選），則刷新
+  if (target.name && (target.name.startsWith('phase') || target.name.startsWith('dir'))) {
+    reFresh();
   }
-
-  // 更新生成頻率
-  if (target.id === "spawnFrequencyInput") {
-    const frequency = parseFloat(target.value) || 5;
-    selectedCircle.spawnFrequency = Math.max(0, frequency);
-  }
-
-  reFresh();
 });
-
 // 輔助函數：根據生成點方向返回對應的活躍方向
 function getSpawnActiveDirections(direction) {
   switch (direction) {
