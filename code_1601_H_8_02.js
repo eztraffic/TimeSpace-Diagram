@@ -1,4 +1,5 @@
 //let fixedSimulationDuration = 900; // 固定模擬時間區間，單位秒，預設300秒
+let customPath = null; // 儲存使用者定義的路徑
 
 const GRID_SPACING_X = 100; // 設計區水平間距（像素）
 const GRID_SPACING_Y = 100; // 設計區垂直間距（像素）
@@ -150,6 +151,7 @@ function initializeIdmPanel() {
 }
 // 在網頁載入時初始化匯入/匯出介面
 document.addEventListener("DOMContentLoaded", () => {
+  // --- 原有的設定面板、IDM 面板等初始化代碼 ---
   const settingsPanel = document.getElementById("settingsPanel");
   const titleBar = document.getElementById("titleBar");
   const minimizeBtn = document.getElementById("minimizeBtn");
@@ -161,14 +163,12 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentY = 100;
   let initialX, initialY;
 
-  // 初始化位置
   settingsPanel.style.left = `${currentX}px`;
   settingsPanel.style.top = `${currentY}px`;
-  settingsPanel.style.display = "none"; // 初始隱藏浮動視窗
-  minimizedIcon.style.display = "block"; // 初始顯示縮小圖標
-  minimizedIcon.style.opacity = "1"; // 確保縮小圖標可見  
+  settingsPanel.style.display = "none";
+  minimizedIcon.style.display = "block";
+  minimizedIcon.style.opacity = "1";
 
-  // 拖曳功能
   titleBar.addEventListener("mousedown", (e) => {
     if (e.target !== minimizeBtn) {
       initialX = e.clientX - currentX;
@@ -177,9 +177,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-	// 新增路口名稱輸入監聽
   document.getElementById("intersectionName").addEventListener("input", function() {
-    selectedCircle.intersectionName = this.value;
+    if(selectedCircle) selectedCircle.intersectionName = this.value;
   });
 
   document.addEventListener("mousemove", (e) => {
@@ -190,28 +189,15 @@ document.addEventListener("DOMContentLoaded", () => {
       settingsPanel.style.left = `${currentX}px`;
       settingsPanel.style.top = `${currentY}px`;
       settingsPanel.style.right = "auto";
-	  
-	  gcurrentX = currentX;
-	  gcurrentY = currentY;
+      gcurrentX = currentX;
+      gcurrentY = currentY;
     }
   });
 
-  document.addEventListener("mouseup", () => {
-    isDragging = false;
-  });
-
-  // 縮小功能
-// 綁定縮小功能
-  minimizeBtn.addEventListener("click", () => {
-    minimizeSettingsPanel(settingsPanel, minimizedIcon, currentX, currentY);
-  });
+  document.addEventListener("mouseup", () => { isDragging = false; });
+  minimizeBtn.addEventListener("click", () => { minimizeSettingsPanel(settingsPanel, minimizedIcon, currentX, currentY); });
+  iconWrapper.addEventListener("click", () => { restoreSettingsPanel(settingsPanel, minimizedIcon, panelContent, currentX, currentY); });
   
-// 綁定恢復功能
-  iconWrapper.addEventListener("click", () => {
-    restoreSettingsPanel(settingsPanel, minimizedIcon, panelContent, currentX, currentY);
-  });
-  
-  // 視窗大小改變時調整位置
   window.addEventListener("resize", () => {
     if (settingsPanel.style.display !== "none") {
       currentX = Math.min(currentX, window.innerWidth - settingsPanel.offsetWidth - 20);
@@ -220,56 +206,123 @@ document.addEventListener("DOMContentLoaded", () => {
       settingsPanel.style.top = `${currentY}px`;
     }
   });
-  
-    initializeIdmPanel(); // 初始化 IDM 參數面板的顯示
-	setupSimulationDurationControls();
 
-    if (document.getElementById("applyAlgoParamsBtn")) { // Check if the new UI elements exist
-         initializeAlgoParamsUI();
+  initializeIdmPanel();
+  setupSimulationDurationControls();
+
+  if (document.getElementById("applyAlgoParamsBtn")) {
+    initializeAlgoParamsUI();
+  }
+
+  document.getElementById("applyIdmParamsBtn").addEventListener("click", () => {
+    const new_v0_kmh = parseFloat(document.getElementById("idm_v0").value);
+    IDM_PARAMS.v0 = new_v0_kmh / 3.6;
+    IDM_PARAMS.T = parseFloat(document.getElementById("idm_T").value);
+    IDM_PARAMS.a = parseFloat(document.getElementById("idm_a").value);
+    IDM_PARAMS.b = parseFloat(document.getElementById("idm_b").value);
+    IDM_PARAMS.s0 = parseFloat(document.getElementById("idm_s0").value);
+    document.getElementById("vehicleSpeedInput").value = new_v0_kmh.toFixed(0);
+    console.log("IDM 參數已更新:", IDM_PARAMS);
+    alert("IDM 參數已套用！");
+  });
+
+  const vehicleSpeedInput = document.getElementById("vehicleSpeedInput");
+  const idm_v0_input = document.getElementById("idm_v0");
+  vehicleSpeedInput.addEventListener("change", function() {
+    const speedKmH = parseFloat(this.value);
+    idm_v0_input.value = speedKmH.toFixed(1);
+  });
+  idm_v0_input.addEventListener("change", function() {
+    const speedKmH = parseFloat(this.value);
+    vehicleSpeedInput.value = speedKmH.toFixed(0);
+    vehicleSpeedInput.dispatchEvent(new Event('change'));
+  });
+  
+  // 綁定路徑選擇器的事件
+  document.getElementById("pathStartPointSelector").addEventListener("change", handlePathSelectionChange);
+  document.getElementById("pathEndPointSelector").addEventListener("change", handlePathSelectionChange);
+
+  // 綁定主選擇器的事件監聽器
+  const mainSelector = document.getElementById("spawnPointSelector");
+  mainSelector.addEventListener("change", (e) => {
+    const value = e.target.value;
+    if (value === 'custom_path') {
+      selectedSpawnIndex = 'custom_path';
+    } else {
+      selectedSpawnIndex = parseInt(value, 10);
+    }
+    
+    if ( (typeof selectedSpawnIndex === 'string' && selectedSpawnIndex === 'custom_path') || !isNaN(selectedSpawnIndex) ) {
+        precomputeTrafficLightStates();
+        updateSpacetimeOffscreen();
+    } else {
+        console.error("無效的 selectedSpawnIndex:", selectedSpawnIndex);
+    }
+  });
+
+  // 綁定畫布大小調整事件
+  setCanvasSize();
+  window.addEventListener("resize", setCanvasSize);
+
+  // 【核心修正】替換整個 Tooltip 事件監聽器
+  const stCanvas = document.getElementById("spacetimeCanvas");
+  const tooltip = document.getElementById("spacetimeTooltip");
+  if (!stCanvas || !tooltip) {
+    console.error("Spacetime canvas or tooltip element not found!");
+    return;
+  }
+  
+  stCanvas.addEventListener("mousemove", function(e) {
+    const zoomFactor = parseFloat(document.body.style.zoom) || 1;
+    
+    let maxDistance;
+
+    // 根據當前模式（路徑或非路徑）計算 maxDistance
+    if (selectedSpawnIndex === 'custom_path' && customPath && customPath.length > 0) {
+        maxDistance = customPath.reduce((sum, seg) => sum + seg.distanceToNext, 0);
+    } else if (typeof selectedSpawnIndex === 'number' && spawnPointsList[selectedSpawnIndex]) {
+        const selectedSpawn = spawnPointsList[selectedSpawnIndex];
+        const roads = continuousRoadsBySpawn[selectedSpawn.id];
+        if (!roads || roads.length === 0) {
+            tooltip.style.display = "none";
+            return;
+        }
+        maxDistance = roads.reduce((sum, road) => sum + road.distance, 0);
+    } else {
+        // 如果沒有有效的路徑或生成點，則隱藏 tooltip 並退出
+        tooltip.style.display = "none";
+        return;
     }
 
-    // 添加套用按鈕的事件監聽
-    document.getElementById("applyIdmParamsBtn").addEventListener("click", () => {
-        const new_v0_kmh = parseFloat(document.getElementById("idm_v0").value);
-        IDM_PARAMS.v0 = new_v0_kmh / 3.6; // km/h to m/s
-        IDM_PARAMS.T = parseFloat(document.getElementById("idm_T").value);
-        IDM_PARAMS.a = parseFloat(document.getElementById("idm_a").value);
-        IDM_PARAMS.b = parseFloat(document.getElementById("idm_b").value);
-        IDM_PARAMS.s0 = parseFloat(document.getElementById("idm_s0").value);
+    // 後續的計算邏輯現在可以安全執行，因為 maxDistance 已經被正確賦值
+    const maxTime = fixedSimulationDuration / timeScale;
+    const timeScaleFactor = stCanvas.width / maxTime;
+    const margin = 15;
+    const drawableHeight = stCanvas.height - 2 * margin;
+    const distanceScale = maxDistance > 0 ? drawableHeight / maxDistance : 0;
+    const rect = stCanvas.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) / zoomFactor;
+    const mouseY = (e.clientY - rect.top) / zoomFactor;
+    const timeInSeconds = (mouseX / timeScaleFactor) * timeScale;
+    const distanceFromOrigin = (stCanvas.height - margin - mouseY) / distanceScale;
 
-        // 更新上方 vehicleSpeedInput 以保持同步
-        document.getElementById("vehicleSpeedInput").value = new_v0_kmh.toFixed(0);
+    // 檢查游標是否在圖表有效範圍內
+    if (distanceFromOrigin >= 0 && distanceFromOrigin <= maxDistance && timeInSeconds >= 0 && timeInSeconds <= fixedSimulationDuration) {
+      tooltip.innerHTML = `(${timeInSeconds.toFixed(1)} 秒, ${distanceFromOrigin.toFixed(1)} 公尺)`;
+      tooltip.style.display = 'block';
+      const logicalX = e.pageX / zoomFactor;
+      const logicalY = e.pageY / zoomFactor;
+      tooltip.style.left = (logicalX + 15) + 'px';
+      tooltip.style.top = (logicalY + 15) + 'px';
+    } else {
+      tooltip.style.display = 'none';
+    }
+  });
 
-        console.log("IDM 參數已更新:", IDM_PARAMS);
-        alert("IDM 參數已套用！");
-
-        // 如果參數變更需要立即影響時空圖或預計算狀態，可以在此處調用相關更新函數
-        // 例如： precomputeTrafficLightStates(); // (如果燈號邏輯依賴IDM參數)
-        // updateSpacetimeOffscreen(); // (如果時空圖需要重繪)
-        // 如果正在模擬，可能需要提示使用者重新開始模擬以使所有更改生效
-    });
-
-    // 連動 idm_v0 與 vehicleSpeedInput
-    const vehicleSpeedInput = document.getElementById("vehicleSpeedInput");
-    const idm_v0_input = document.getElementById("idm_v0");
-
-    vehicleSpeedInput.addEventListener("change", function() {
-        const speedKmH = parseFloat(this.value);
-        idm_v0_input.value = speedKmH.toFixed(1);
-        // IDM_PARAMS.v0 的更新已在您原有的 vehicleSpeedInput 事件監聽中處理
-    });
-
-    idm_v0_input.addEventListener("change", function() {
-        const speedKmH = parseFloat(this.value);
-        vehicleSpeedInput.value = speedKmH.toFixed(0);
-        // 觸發 vehicleSpeedInput 的 change 事件以更新 IDM_PARAMS.v0 和相關圖表
-        vehicleSpeedInput.dispatchEvent(new Event('change'));
-    });  
-  
-  
-  
+  stCanvas.addEventListener("mouseout", function() {
+    tooltip.style.display = "none";
+  });
 });
-
 let gcurrentX, gcurrentY
 
 
@@ -391,44 +444,66 @@ const cellWidth = (designWidth - 2 * marginX) / (GRID_COLS - 1);
 const cellHeight = (designHeight - 2 * marginY) / (GRID_ROWS - 1);
 
 function computeGreenWavePaths() {
-  const selectedSpawn = spawnPointsList[selectedSpawnIndex];
-  if (!selectedSpawn) return { paths: [], maxGreenWaveTime: 0, totalGreenWaveTime: 0, greenWaveString: "", maxGreenCount: 0 };
+  let pathData, intersectionDistances = [], maxDistance;
 
-  const roads = continuousRoadsBySpawn[selectedSpawn.id];
-  const selectedDirection = selectedSpawn.intersection.spawnPoint.direction;
+  // --- 1. 數據準備 (邏輯不變) ---
+  if (selectedSpawnIndex === 'custom_path' && customPath) {
+      pathData = customPath;
+  } else if (typeof selectedSpawnIndex === 'number' && spawnPointsList[selectedSpawnIndex]) {
+      const selectedSpawn = spawnPointsList[selectedSpawnIndex];
+      const roads = continuousRoadsBySpawn[selectedSpawn.id];
+      if (!roads || roads.length === 0) return { paths: [], maxGreenWaveTime: 0, totalGreenWaveTime: 0, greenWaveString: "", maxGreenCount: 0 };
+      
+      pathData = [];
+      roads.forEach((road, index) => {
+          const startIntersect = simIntersections.find(inter =>
+              Math.abs(inter.position.x - road.start.x) < 5 &&
+              Math.abs(inter.position.y - road.start.y) < 5
+          );
+          if (startIntersect) {
+              pathData.push({
+                  intersection: startIntersect,
+                  movement: selectedSpawn.intersection.spawnPoint.direction,
+                  distanceToNext: road.distance
+              });
+          }
+           if (index === roads.length - 1) {
+             const endIntersect = simIntersections.find(inter =>
+                Math.abs(inter.position.x - road.end.x) < 5 &&
+                Math.abs(inter.position.y - road.end.y) < 5
+            );
+            if(endIntersect) {
+                 pathData.push({
+                    intersection: endIntersect,
+                    movement: selectedSpawn.intersection.spawnPoint.direction,
+                    distanceToNext: 0
+                });
+            }
+        }
+      });
+  } else {
+      return { paths: [], maxGreenWaveTime: 0, totalGreenWaveTime: 0, greenWaveString: "", maxGreenCount: 0 };
+  }
+  
+  if (!pathData || pathData.length === 0) return { paths: [], maxGreenWaveTime: 0, totalGreenWaveTime: 0, greenWaveString: "", maxGreenCount: 0 };
+
+  // --- 2. 建立 intersectionDistances ---
+  let cumulativeDistance = 0;
+  pathData.forEach(segment => {
+    // 【核心修正】與 updateSpacetimeOffscreen 保持一致，手動組合正確的 intersectId
+    const intersectId = segment.intersection.id || `intersect_${segment.intersection.row}_${segment.intersection.col}`;
+    intersectionDistances.push({
+      id: intersectId,
+      distance: cumulativeDistance,
+      movement: segment.movement 
+    });
+    cumulativeDistance += segment.distanceToNext;
+  });
+  maxDistance = cumulativeDistance;
+  
+  // --- 3. 綠波計算 (邏輯不變) ---
   const maxTime = fixedSimulationDuration;
   const step = 0.1;
-
-  let intersectionDistances = [];
-  let cumulativeDistance = 0;
-  roads.forEach((road, index) => {
-    const startIntersect = simIntersections.find(inter =>
-      Math.abs(inter.position.x - road.start.x) < 5 &&
-      Math.abs(inter.position.y - road.start.y) < 5
-    );
-    if (startIntersect) {
-      intersectionDistances.push({
-        id: startIntersect.id,
-        distance: cumulativeDistance
-      });
-    }
-    cumulativeDistance += road.distance;
-    if (index === roads.length - 1) {
-      const endIntersect = simIntersections.find(inter =>
-        Math.abs(inter.position.x - road.end.x) < 5 &&
-        Math.abs(inter.position.y - road.end.y) < 5
-      );
-      if (endIntersect) {
-        intersectionDistances.push({
-          id: endIntersect.id,
-          distance: cumulativeDistance
-        });
-      }
-    }
-  });
-
-  if (intersectionDistances.length < 2) return { paths: [], maxGreenWaveTime: 0, totalGreenWaveTime: 0, greenWaveString: "", maxGreenCount: 0 };
-
   let greenWavePaths = [];
   let maxGreenWaveTime = 0;
   let totalGreenWaveTime = 0;
@@ -436,96 +511,78 @@ function computeGreenWavePaths() {
   let maxGreenCount = 0;
   let currentGreenCount = 0;
 
-  const firstIntersectId = intersectionDistances[0].id;
-  const firstStates = trafficLightStates[firstIntersectId] || [];
-
-  if (firstStates.length === 0) {
-    return { paths: [], maxGreenWaveTime: 0, totalGreenWaveTime: 0, greenWaveString: "", maxGreenCount: 0 };
+  if (intersectionDistances.length === 0) {
+      return { paths: [], maxGreenWaveTime: 0, totalGreenWaveTime: 0, greenWaveString: "", maxGreenCount: 0 };
   }
 
   let currentTime = 0;
   while (currentTime < maxTime) {
     let allGreen = true;
     let startRed = false;
-    let encounteredRed = false;
 
-    const startArrivalTime = currentTime;
-    let startLightState = 'red';
-    for (let k = 0; k < firstStates.length - 1; k++) {
-      if (startArrivalTime >= firstStates[k].time && startArrivalTime < firstStates[k + 1].time) {
-        startLightState = firstStates[k].state[selectedDirection];
-        break;
-      }
-    }
-    if (startArrivalTime >= firstStates[firstStates.length - 1].time) {
-      startLightState = firstStates[firstStates.length - 1].state[selectedDirection];
-    }
-    if (startLightState === 'red') {
-      startRed = true;
-    }
+    for (let j = 0; j < intersectionDistances.length; j++) {
+        const { id: intersectId, distance, movement } = intersectionDistances[j];
+        
+        if (movement === 'END') continue;
 
-    const endDistance = intersectionDistances[intersectionDistances.length - 1].distance;
-    const endArrivalTime = currentTime + endDistance / greenWaveSpeed;
-    const withinSimulationTime = endArrivalTime <= maxTime;
-
-    if (!startRed) {
-      for (let j = 1; j < intersectionDistances.length; j++) {
-        const distance = intersectionDistances[j].distance;
         const arrivalTime = currentTime + distance / greenWaveSpeed;
-        const intersectId = intersectionDistances[j].id;
-        const states = trafficLightStates[intersectId] || [];
-
-        if (states.length === 0) {
-          allGreen = false;
-          break;
+        if (arrivalTime > maxTime) {
+            allGreen = false;
+            break;
         }
 
+        const states = trafficLightStates[intersectId] || [];
+        if (states.length === 0) {
+            allGreen = false;
+            break;
+        }
+        
         let lightState = 'red';
         for (let k = 0; k < states.length - 1; k++) {
-          if (arrivalTime >= states[k].time && arrivalTime < states[k + 1].time) {
-            lightState = states[k].state[selectedDirection];
-            break;
-          }
+            if (arrivalTime >= states[k].time && arrivalTime < states[k + 1].time) {
+                if (states[k].state[movement] === 'green') {
+                    lightState = 'green';
+                }
+                break;
+            }
         }
-        if (arrivalTime >= states[states.length - 1].time) {
-          lightState = states[states.length - 1].state[selectedDirection];
+        
+        // 檢查最後一個時間段的狀態
+        if (lightState === 'red' && states.length > 0 && arrivalTime >= states[states.length - 1].time) {
+             if (states[states.length - 1].state[movement] === 'green') {
+                lightState = 'green';
+            }
         }
 
+
         if (lightState !== 'green') {
-          allGreen = false;
-          encounteredRed = true;
-          break;
+            allGreen = false;
+            if (j === 0) {
+                startRed = true;
+            }
+            break;
         }
-      }
-    } else {
-      allGreen = false;
     }
 
     let state;
     if (startRed) {
-      state = "r";
-      currentGreenCount = 0;
-    } else if (allGreen && withinSimulationTime) {
-      state = "g";
-      currentGreenCount++;
-      maxGreenCount = Math.max(maxGreenCount, currentGreenCount);
-      if (!greenWavePaths.length || greenWavePaths[greenWavePaths.length - 1].startTime !== currentTime - step) {
-        greenWavePaths.push({
-          startTime: currentTime,
-          endDistance: endDistance
-        });
-      }
-      totalGreenWaveTime += step;
-      maxGreenWaveTime = Math.max(maxGreenWaveTime, currentGreenCount * step);
-    } else if (!startRed && encounteredRed && withinSimulationTime) {
-      state = "n";
-      currentGreenCount = 0;
-    } else if (!startRed && !withinSimulationTime) {
-      state = "m";
-      currentGreenCount = 0;
+        state = "r";
+        currentGreenCount = 0;
+    } else if (allGreen) {
+        state = "g";
+        currentGreenCount++;
+        maxGreenCount = Math.max(maxGreenCount, currentGreenCount);
+        if (!greenWavePaths.length || greenWavePaths[greenWavePaths.length - 1].startTime !== currentTime - step) {
+            greenWavePaths.push({
+                startTime: currentTime,
+                endDistance: maxDistance
+            });
+        }
+        totalGreenWaveTime += step;
+        maxGreenWaveTime = Math.max(maxGreenWaveTime, currentGreenCount * step);
     } else {
-      state = "n";
-      currentGreenCount = 0;
+        state = "n";
+        currentGreenCount = 0;
     }
 
     timeSteps.push({ time: currentTime, state: state });
@@ -546,7 +603,13 @@ function precomputeTrafficLightStates() {
     if (!intersect.id) intersect.id = `intersect_${intersect.position.x}_${intersect.position.y}`;
     trafficLightStates[intersect.id] = [];
 
+    // 確保路口週期大於0，避免無限迴圈
     const cycle = intersect.phases.reduce((sum, p) => sum + p.greenTime + p.redTime, 0);
+    if (cycle <= 0) {
+      console.warn(`Intersection ${intersect.id} has a cycle time of 0. Skipping precomputation.`);
+      return; 
+    }
+
     let currentTime = 0;
     const timeStep = 0.2;
 
@@ -555,7 +618,17 @@ function precomputeTrafficLightStates() {
       if (elapsedTime < 0) elapsedTime += cycle;
 
       let phaseTime = 0;
-      let lightStatus = { N: 'red', S: 'red', E: 'red', W: 'red', NE: 'red', SW: 'red', SE: 'red', NW: 'red' };
+      // 初始化所有方向為紅燈
+      let lightStatus = { 
+          N: 'red', S: 'red', E: 'red', W: 'red', 
+          NE: 'red', SW: 'red', SE: 'red', NW: 'red'
+      };
+      // 【新增】將左轉和右轉方向也加入到 lightStatus 中並初始化為紅燈
+      ['N', 'S', 'E', 'W', 'NE', 'SW', 'SE', 'NW'].forEach(dir => {
+          lightStatus[dir + 'L'] = 'red';
+          lightStatus[dir + 'R'] = 'red';
+      });
+
       let foundPhase = false;
 
       for (let i = 0; i < intersect.phases.length; i++) {
@@ -564,31 +637,41 @@ function precomputeTrafficLightStates() {
 
         if (elapsedTime >= phaseTime && elapsedTime < phaseTime + phaseDuration) {
           const inGreen = elapsedTime < phaseTime + phase.greenTime;
-          const nextPhaseIndex = (i + 1) % intersect.phases.length;
-          const nextPhase = intersect.phases[nextPhaseIndex];
-
+          
           if (inGreen) {
-            phase.activeDirections.forEach(dir => {
+            // 【核心修正】不僅設置主方向，還要設置左轉和右轉方向
+            // 1. 設置主方向綠燈
+            (phase.activeDirections || []).forEach(dir => {
               lightStatus[dir] = 'green';
             });
-          } else {
-            const redTimeStart = phaseTime + phase.greenTime;
-            if (elapsedTime >= redTimeStart && elapsedTime < phaseTime + phaseDuration) {
-              phase.activeDirections.forEach(dir => {
-                if (nextPhase.activeDirections.includes(dir)) {
-                  lightStatus[dir] = 'green';
-                }
-              });
-            }
+            // 2. 設置左轉方向綠燈
+            (phase.leftTurnDirections || []).forEach(dir => {
+              lightStatus[dir] = 'green';
+            });
+            // 3. 設置右轉方向綠燈
+            (phase.rightTurnDirections || []).forEach(dir => {
+              lightStatus[dir] = 'green';
+            });
+          }
+          // "黃燈+全紅"期間的邏輯保持不變（通常轉向燈不會有綠燈延續）
+          else {
+            const nextPhaseIndex = (i + 1) % intersect.phases.length;
+            const nextPhase = intersect.phases[nextPhaseIndex];
+            (phase.activeDirections || []).forEach(dir => {
+              if ((nextPhase.activeDirections || []).includes(dir)) {
+                lightStatus[dir] = 'green';
+              }
+            });
           }
           foundPhase = true;
           break;
         }
         phaseTime += phaseDuration;
       }
-
+      
+      // 如果找不到對應時相（通常不會發生），確保所有燈號為紅
       if (!foundPhase) {
-        lightStatus = { N: 'red', S: 'red', E: 'red', W: 'red', NE: 'red', SW: 'red', SE: 'red', NW: 'red' };
+          Object.keys(lightStatus).forEach(key => lightStatus[key] = 'red');
       }
 
       trafficLightStates[intersect.id].push({
@@ -596,25 +679,19 @@ function precomputeTrafficLightStates() {
         state: { ...lightStatus }
       });
 
-		// Debug: Log states for diagonal directions
-      if (lightStatus.NE === 'green' || lightStatus.SW === 'green' || 
-          lightStatus.SE === 'green' || lightStatus.NW === 'green') {
-        console.log(`Intersection ${intersect.id} at t=${currentTime.toFixed(1)}: `, lightStatus);
-      }
-
       currentTime += timeStep;
     }
 
-    const lastState = trafficLightStates[intersect.id][trafficLightStates[intersect.id].length - 1];
-    if (lastState.time < maxTime) {
+    // 確保最後一個時間點的狀態被記錄
+    const lastStateEntry = trafficLightStates[intersect.id][trafficLightStates[intersect.id].length - 1];
+    if (lastStateEntry && lastStateEntry.time < maxTime) {
       trafficLightStates[intersect.id].push({
         time: maxTime,
-        state: { ...lastState.state }
+        state: { ...lastStateEntry.state }
       });
     }
   });
 }
-
 let gridCircles = [];
 for (let r = 0; r < GRID_ROWS; r++) {
   for (let c = 0; c < GRID_COLS; c++) {
@@ -654,7 +731,9 @@ selector.addEventListener("change", (e) => {
 
 function updateSpawnPointSelector() {
   const selector = document.getElementById("spawnPointSelector");
+  const currentValue = selector.value; // 保存當前選擇
   selector.innerHTML = ""; // 清空現有選項
+
   spawnPointsList.forEach((sp, index) => {
     const option = document.createElement("option");
     option.value = index;
@@ -678,6 +757,31 @@ function updateSpawnPointSelector() {
     option.textContent = `${displayName} - 方向: ${sp.intersection.spawnPoint.direction}`;
     selector.appendChild(option);
   });
+  
+  // 填充路徑起點和終點選擇器
+  populatePathSelectors();
+
+  // 如果存在自訂路徑，則添加 "路徑" 選項
+  if (customPath && customPath.length > 0) {
+    const option = document.createElement("option");
+    option.value = "custom_path";
+    const startCircle = customPath[0].intersection;
+    const endCircle = customPath[customPath.length - 1].intersection;
+    
+    const startName = startCircle.intersectionName?.trim() || `(${startCircle.row},${startCircle.col})`;
+    const endName = endCircle.intersectionName?.trim() || `(${endCircle.row},${endCircle.col})`;
+
+    option.textContent = `路徑: ${startName} -> ${endName}`;
+    selector.appendChild(option);
+  }
+
+  // 嘗試恢復之前的選擇，如果不存在則選擇第一個
+  if (Array.from(selector.options).some(opt => opt.value === currentValue)) {
+      selector.value = currentValue;
+  } else {
+      selector.selectedIndex = 0;
+  }
+  
   renderSpawnDataDisplay(); // 保留原有的顯示更新調用
 }
 
@@ -1421,8 +1525,10 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
       ? selectedCircle.intersectionName 
       : `(${selectedCircle.row},${selectedCircle.col})`;
     document.getElementById("circleInfo").textContent = `路口位置：${displayName}`;
-    updateSpawnPointSelector();
-    return; // 處理完畢，提前退出
+    
+    // 【核心修正 1】在名稱變更後，立即調用 reFresh 來更新所有相關數據和 UI
+    reFresh(); 
+    return;
   }
 
   // 更新鎖定狀態
@@ -1447,7 +1553,6 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
         redTime: 0
       }];
     } else {
-      // 恢復默認時相
       selectedCircle.phases = [
         { activeDirections: ['N', 'S'], leftTurnDirections: [], rightTurnDirections: [], greenTime: 10, redTime: 1 },
         { activeDirections: ['E', 'W'], leftTurnDirections: [], rightTurnDirections: [], greenTime: 10, redTime: 1 }
@@ -1460,7 +1565,7 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
     return;
   }
   
-  if (target.id === "spawnFreq") { // 修正 ID
+  if (target.id === "spawnFreq") {
     const frequency = parseFloat(target.value) || 5;
     selectedCircle.spawnFrequency = Math.max(0, frequency);
     reFresh();
@@ -1468,7 +1573,7 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
   }
   
   if (target.id === "spawnDirection") {
-    if (isSpawn) { // 只有在 isSpawn 啟用時才更新
+    if (isSpawn) {
         selectedCircle.spawnDirection = target.value;
         selectedCircle.phases = [{
             activeDirections: getSpawnActiveDirections(target.value),
@@ -1486,6 +1591,8 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
   
   if (target.id === "spawnName") {
     selectedCircle.spawnName = target.value;
+    
+    // 【核心修正 2】同樣地，在 spawnName 變更後也立即調用 reFresh
     reFresh();
     return;
   }
@@ -1521,7 +1628,7 @@ document.getElementById("circleForm").addEventListener("change", function(e) {
       selectedCircle.locked = document.getElementById("isLocked").checked;
       
       if (selectedCircle.isMaster || selectedCircle.locked) {
-        selectedCircle.refMaster = null; // 主燈號或鎖定路口不能引用其他主燈號
+        selectedCircle.refMaster = null;
       }
       
       if(selectedCircle.refMaster){
@@ -1851,19 +1958,57 @@ const offscreenCtx = offscreenCanvas.getContext("2d");
 function updateSpacetimeOffscreen() {
   offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
-  if (spawnPointsList.length === 0) return;
-
-  const selectedSpawn = spawnPointsList[selectedSpawnIndex];
-  const selectedDirection = selectedSpawn.intersection.spawnPoint.direction;
-  const maxTime = fixedSimulationDuration / timeScale;
-  const roads = continuousRoadsBySpawn[selectedSpawn.id];
-  const maxDistance = roads.reduce((sum, road) => sum + road.distance, 0);
-  const timeScaleFactor = offscreenCanvas.width / maxTime;
+  let pathData, maxDistance, maxTime;
   const margin = 15;
-  const drawableHeight = offscreenCanvas.height - 2 * margin;
-  const distanceScale = drawableHeight / maxDistance;
+  
+  if (selectedSpawnIndex === 'custom_path' && customPath) {
+    pathData = customPath;
+    maxDistance = pathData.reduce((sum, seg) => sum + seg.distanceToNext, 0);
+  } else if (typeof selectedSpawnIndex === 'number' && spawnPointsList[selectedSpawnIndex]) {
+    const selectedSpawn = spawnPointsList[selectedSpawnIndex];
+    const roads = continuousRoadsBySpawn[selectedSpawn.id];
+    if (!roads || roads.length === 0) return;
+    
+    pathData = [];
+    roads.forEach((road, index) => {
+        const startIntersect = simIntersections.find(inter =>
+            Math.abs(inter.position.x - road.start.x) < 5 &&
+            Math.abs(inter.position.y - road.start.y) < 5
+        );
+        if (startIntersect) {
+            pathData.push({
+                intersection: startIntersect,
+                movement: selectedSpawn.intersection.spawnPoint.direction,
+                distanceToNext: road.distance
+            });
+        }
+        if (index === roads.length - 1) {
+             const endIntersect = simIntersections.find(inter =>
+                Math.abs(inter.position.x - road.end.x) < 5 &&
+                Math.abs(inter.position.y - road.end.y) < 5
+            );
+            if(endIntersect) {
+                 pathData.push({
+                    intersection: endIntersect,
+                    movement: selectedSpawn.intersection.spawnPoint.direction,
+                    distanceToNext: 0
+                });
+            }
+        }
+    });
+    maxDistance = roads.reduce((sum, road) => sum + road.distance, 0);
+  } else {
+    return;
+  }
 
-  // Draw time ticks
+  if (!pathData || pathData.length === 0) return;
+  
+  maxTime = fixedSimulationDuration / timeScale;
+  const timeScaleFactor = offscreenCanvas.width / maxTime;
+  const drawableHeight = offscreenCanvas.height - 2 * margin;
+  const distanceScale = maxDistance > 0 ? drawableHeight / maxDistance : 1;
+
+  // Draw time ticks (程式碼不變)
   const timeTickInterval = 50 / timeScale;
   for (let i = 0; i <= Math.floor(maxTime / timeTickInterval); i++) {
     const time = i * timeTickInterval;
@@ -1879,7 +2024,7 @@ function updateSpacetimeOffscreen() {
     offscreenCtx.fillText(`${(time * timeScale).toFixed(0)}s`, x - 10, offscreenCanvas.height - 5);
   }
 
-  // Draw distance ticks
+  // Draw distance ticks (程式碼不變)
   const distTickInterval = Math.ceil(maxDistance / 5 / 10) * 10;
   for (let i = 0; i <= Math.floor(maxDistance / distTickInterval); i++) {
     const distance = i * distTickInterval;
@@ -1896,137 +2041,97 @@ function updateSpacetimeOffscreen() {
     let textY = (y < margin + 10) ? y + 10 : (y > offscreenCanvas.height - margin - 5) ? y - 5 : y + 3;
     offscreenCtx.fillText(`${distance}m`, textX, textY);
   }
-
+  
   // Draw light states and intersection names
   let cumulativeDistance = 0;
+  pathData.forEach((segment, index) => {
+    const intersect = segment.intersection;
+    const y = offscreenCanvas.height - margin - cumulativeDistance * distanceScale;
+    
+    offscreenCtx.beginPath();
+    offscreenCtx.moveTo(0, y);
+    offscreenCtx.lineTo(offscreenCanvas.width, y);
+    offscreenCtx.strokeStyle = "gray";
+    offscreenCtx.lineWidth = 1;
+    offscreenCtx.stroke();
 
-  roads.forEach((road, index) => {
-    const startIntersect = simIntersections.find(inter =>
-      Math.abs(inter.position.x - road.start.x) < 5 &&
-      Math.abs(inter.position.y - road.start.y) < 5
-    );
-    if (startIntersect) {
-      const y = offscreenCanvas.height - margin - cumulativeDistance * distanceScale;
-      offscreenCtx.beginPath();
-      offscreenCtx.moveTo(0, y);
-      offscreenCtx.lineTo(offscreenCanvas.width, y);
-      offscreenCtx.strokeStyle = "gray";
-      offscreenCtx.lineWidth = 1;
-      offscreenCtx.stroke();
+    const intersectId = intersect.id || `intersect_${intersect.row}_${intersect.col}`;
+    const states = trafficLightStates[intersectId] || [];
+    
+    const isFinalDestination = (selectedSpawnIndex === 'custom_path' && index === pathData.length - 1);
 
-      const states = trafficLightStates[startIntersect.id] || [];
-      states.forEach((state, idx) => {
+    states.forEach((state, idx) => {
         if (idx < states.length - 1) {
-          const x1 = state.time / timeScale * timeScaleFactor;
-          const x2 = states[idx + 1].time / timeScale * timeScaleFactor;
-          const color = state.state[selectedDirection] === 'green' ? 'green' : 'red';
-          offscreenCtx.beginPath();
-          offscreenCtx.moveTo(x1, y);
-          offscreenCtx.lineTo(x2, y);
-          offscreenCtx.strokeStyle = color;
-          offscreenCtx.lineWidth = 2;
-          offscreenCtx.stroke();
-        }
-      });
-
-      offscreenCtx.fillStyle = "black";
-      offscreenCtx.font = "12px Arial";
-      const textY = y + 12;
-      if (textY < offscreenCanvas.height - margin) {
-        // 查找對應的 gridCircle 以獲取 intersectionName
-        const gridCircle = gridCircles.find(c =>
-          simIntersections.some(inter =>
-            inter.id === `intersect_${c.row}_${c.col}` &&
-            Math.abs(inter.position.x - road.start.x) < 5 &&
-            Math.abs(inter.position.y - road.start.y) < 5
-          )
-        );
-        let intersectionName = gridCircle ? gridCircle.intersectionName : "";
-        if (!intersectionName.trim()) {
-          intersectionName = gridCircle ? `(${gridCircle.row},${gridCircle.col})` : `路口 ${index + 1}`;
-        }
-        offscreenCtx.fillText(intersectionName, 60, textY);
-      }
-    }
-    cumulativeDistance += road.distance;
-
-    if (index === roads.length - 1) {
-      const endIntersect = simIntersections.find(inter =>
-        Math.abs(inter.position.x - road.end.x) < 5 &&
-        Math.abs(inter.position.y - road.end.y) < 5
-      );
-      if (endIntersect) {
-        const y = offscreenCanvas.height - margin - cumulativeDistance * distanceScale;
-        offscreenCtx.beginPath();
-        offscreenCtx.moveTo(0, y);
-        offscreenCtx.lineTo(offscreenCanvas.width, y);
-        offscreenCtx.strokeStyle = "gray";
-        offscreenCtx.lineWidth = 1;
-        offscreenCtx.stroke();
-
-        const states = trafficLightStates[endIntersect.id] || [];
-        states.forEach((state, idx) => {
-          if (idx < states.length - 1) {
             const x1 = state.time / timeScale * timeScaleFactor;
             const x2 = states[idx + 1].time / timeScale * timeScaleFactor;
-            const color = state.state[selectedDirection] === 'green' ? 'green' : 'red';
+            
+            let lightColor = 'red'; // 預設為紅燈
+
+            if (isFinalDestination) {
+                lightColor = 'green';
+            } else {
+                // 【核心修正】直接使用 movement 字串來檢查對應的燈號狀態
+                // precomputeTrafficLightStates 已經為 'E', 'EL', 'ER' 等都產生了狀態
+                if (state.state[segment.movement] === 'green') {
+                    lightColor = 'green';
+                }
+            }
+            
             offscreenCtx.beginPath();
             offscreenCtx.moveTo(x1, y);
             offscreenCtx.lineTo(x2, y);
-            offscreenCtx.strokeStyle = color;
+            offscreenCtx.strokeStyle = lightColor;
             offscreenCtx.lineWidth = 2;
             offscreenCtx.stroke();
-          }
-        });
-
-        const textY = y + 12;
-        if (textY < offscreenCanvas.height - margin) {
-          // 查找對應的 gridCircle 以獲取 intersectionName
-          const gridCircle = gridCircles.find(c =>
-            simIntersections.some(inter =>
-              inter.id === `intersect_${c.row}_${c.col}` &&
-              Math.abs(inter.position.x - road.end.x) < 5 &&
-              Math.abs(inter.position.y - road.end.y) < 5
-            )
-          );
-          let intersectionName = gridCircle ? gridCircle.intersectionName : "";
-          if (!intersectionName.trim()) {
-            intersectionName = gridCircle ? `(${gridCircle.row},${gridCircle.col})` : `路口 ${index + 2}`;
-          }
-          offscreenCtx.fillText(intersectionName, 60, textY);
         }
-      }
+    });
+    
+    // 顯示路口名稱 (程式碼不變)
+    offscreenCtx.fillStyle = "black";
+    offscreenCtx.font = "12px Arial";
+    const textY = y + 12;
+    if (textY < offscreenCanvas.height - margin) {
+        let intersectionName = intersect.intersectionName?.trim();
+        if (!intersectionName) {
+            const row = intersect.row;
+            const col = intersect.col;
+            intersectionName = `(${row},${col})`;
+        }
+        offscreenCtx.fillText(intersectionName, 60, textY);
     }
+    
+    cumulativeDistance += segment.distanceToNext;
   });
 
-  // Draw vehicle trajectories
-  for (let vehId in vehicleTrajectories) {
-    const trajectory = vehicleTrajectories[vehId];
-    if (trajectory[0].direction !== selectedDirection) continue;
+  // Draw vehicle trajectories (程式碼不變)
+  const spawnIdToMatch = (selectedSpawnIndex === 'custom_path' && customPath)
+    ? `spawn_${simIntersections.findIndex(inter => inter.row === customPath[0].intersection.row && inter.col === customPath[0].intersection.col)}`
+    : (spawnPointsList[selectedSpawnIndex] ? spawnPointsList[selectedSpawnIndex].id : null);
 
-    const vehicle = simVehicles.find(veh => veh.id === parseInt(vehId)) || 
-                    { spawnId: trajectory[0].spawnId };
-    if (vehicle.spawnId !== selectedSpawn.id) continue;
-
-    offscreenCtx.beginPath();
-    let firstPoint = true;
-    trajectory.forEach(point => {
-      const x = (point.time / timeScale) * timeScaleFactor;
-      const y = offscreenCanvas.height - margin - point.position * distanceScale;
-      if (y < margin || y > offscreenCanvas.height - margin) return;
-      if (firstPoint) {
-        offscreenCtx.moveTo(x, y);
-        firstPoint = false;
-      } else {
-        offscreenCtx.lineTo(x, y);
+  if (spawnIdToMatch) {
+      for (let vehId in vehicleTrajectories) {
+        const trajectory = vehicleTrajectories[vehId];
+        if (trajectory.length === 0 || trajectory[0].spawnId !== spawnIdToMatch) continue;
+        offscreenCtx.beginPath();
+        let firstPoint = true;
+        trajectory.forEach(point => {
+          const x = (point.time / timeScale) * timeScaleFactor;
+          const y = offscreenCanvas.height - margin - point.position * distanceScale;
+          if (y < margin || y > offscreenCanvas.height - margin) return;
+          if (firstPoint) {
+            offscreenCtx.moveTo(x, y);
+            firstPoint = false;
+          } else {
+            offscreenCtx.lineTo(x, y);
+          }
+        });
+        offscreenCtx.strokeStyle = "blue";
+        offscreenCtx.lineWidth = 1;
+        offscreenCtx.stroke();
       }
-    });
-    offscreenCtx.strokeStyle = "blue";
-    offscreenCtx.lineWidth = 1;
-    offscreenCtx.stroke();
   }
 
-  // Draw green wave paths
+  // Draw green wave paths (程式碼不變)
   const { paths: greenWavePaths, maxGreenWaveTime, totalGreenWaveTime } = computeGreenWavePaths();
   greenWavePaths.forEach(path => {
     const startX = (path.startTime / timeScale) * timeScaleFactor;
@@ -2043,10 +2148,9 @@ function updateSpacetimeOffscreen() {
   });
 
   const probability = (totalGreenWaveTime / fixedSimulationDuration) * 100;
-  const formattedProbability = probability.toFixed(2);
-  document.getElementById("maxGreenWaveTime").textContent = `最大綠波秒數：${maxGreenWaveTime.toFixed(1)} 秒 | 通過機率：${formattedProbability}%`;
+  const formattedProbability = isNaN(probability) ? 0 : probability;
+  document.getElementById("maxGreenWaveTime").textContent = `最大綠波秒數：${maxGreenWaveTime.toFixed(1)} 秒 | 通過機率：${formattedProbability.toFixed(2)}%`;
 }
-
 /// 修正後的 animateSim 函數
 function animateSim(timestamp) {
   if (!simLastTimeAnim) simLastTimeAnim = timestamp;
@@ -2163,7 +2267,7 @@ function reFresh() {
     }
   }
 
-simIntersections = gridCircles
+  simIntersections = gridCircles
     .filter(circle => circle.selected)
     .map(circle => {
       // Validate phases to prevent diagonal-horizontal conflicts
@@ -2187,7 +2291,10 @@ simIntersections = gridCircles
         circle.phases = phases;
       }
 
+      // 【修正點】在這裡返回的物件中，加入 row 和 col 屬性
       return {
+        row: circle.row, // <-- 新增此行
+        col: circle.col, // <-- 新增此行
         position: { x: rowColX[circle.row][circle.col], y: rowY[circle.row] },
         phases: circle.phases,
         offset: circle.offset,
@@ -2202,7 +2309,7 @@ simIntersections = gridCircles
           NE: 'red', SW: 'red', SE: 'red', NW: 'red' 
         },
         id: `intersect_${circle.row}_${circle.col}`,
-        intersectionName: circle.intersectionName // 新增
+        intersectionName: circle.intersectionName
       };
     });
 
@@ -3024,72 +3131,239 @@ function restoreSettingsPanel(settingsPanel, minimizedIcon, panelContent, curren
   }, 50); // 確保淡出完成
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const stCanvas = document.getElementById("spacetimeCanvas");
-  const tooltip = document.getElementById("spacetimeTooltip");
 
-  if (!stCanvas || !tooltip) {
-    console.error("Spacetime canvas or tooltip element not found!");
-    return;
-  }
+/**
+ * 填充路徑起點和終點的下拉選擇器
+ */
+function populatePathSelectors() {
+  const startSelector = document.getElementById("pathStartPointSelector");
+  const endSelector = document.getElementById("pathEndPointSelector");
 
-  // 輔助函式：取得頁面縮放比例
-  function getZoomFactor() {
-    return parseFloat(document.body.style.zoom) || 1;
-  }
+  // 保存當前選擇
+  const currentStart = startSelector.value;
+  const currentEnd = endSelector.value;
 
-  // 滑鼠在畫布上移動的事件監聽
-  stCanvas.addEventListener("mousemove", function(e) {
-    const zoomFactor = getZoomFactor();
+  // 清空選項
+  startSelector.innerHTML = '<option value="">無</option>';
+  endSelector.innerHTML = '<option value="">無</option>';
 
-    // --- 計算座標數值 (此部分已正確) ---
-    if (spawnPointsList.length === 0 || !spawnPointsList[selectedSpawnIndex]) {
-      tooltip.style.display = "none";
-      return;
-    }
-    const selectedSpawn = spawnPointsList[selectedSpawnIndex];
-    const roads = continuousRoadsBySpawn[selectedSpawn.id];
-    if (!roads || roads.length === 0) {
-      tooltip.style.display = "none";
-      return;
-    }
-    const maxTime = fixedSimulationDuration / timeScale;
-    const maxDistance = roads.reduce((sum, road) => sum + road.distance, 0);
-    const timeScaleFactor = stCanvas.width / maxTime;
-    const margin = 15;
-    const drawableHeight = stCanvas.height - 2 * margin;
-    const distanceScale = maxDistance > 0 ? drawableHeight / maxDistance : 0;
-    const rect = stCanvas.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left) / zoomFactor;
-    const mouseY = (e.clientY - rect.top) / zoomFactor;
-    const timeInSeconds = (mouseX / timeScaleFactor) * timeScale;
-    const distanceFromOrigin = (stCanvas.height - margin - mouseY) / distanceScale;
-    // --- 計算結束 ---
-
-    // 檢查游標是否在圖表有效範圍內
-    if (distanceFromOrigin >= 0 && distanceFromOrigin <= maxDistance && timeInSeconds >= 0 && timeInSeconds <= fixedSimulationDuration) {
-      tooltip.innerHTML = `(${timeInSeconds.toFixed(1)} 秒, ${distanceFromOrigin.toFixed(1)} 公尺)`;
-      tooltip.style.display = 'block';
-      
-      // --- 定位 Tooltip (最終修正) ---
-      // 滑鼠事件的 pageX/pageY 是物理像素座標。
-      // 在一個被 zoom 的元素內部，CSS 的 top/left 需要的是邏輯像素座標。
-      // 從物理像素轉換到邏輯像素，我們需要除以 zoomFactor。
-      const logicalX = e.pageX / zoomFactor;
-      const logicalY = e.pageY / zoomFactor;
-
-      // 使用轉換後的邏輯座標來定位，並加上一個小偏移量避免 tooltip 擋住鼠標本身
-      tooltip.style.left = (logicalX + 15) + 'px';
-      tooltip.style.top = (logicalY + 15) + 'px';
-
+  spawnPointsList.forEach((sp) => {
+    const circle = sp.intersection;
+    // 使用 row,col 作為唯一標識符
+    const value = `${circle.row},${circle.col}`;
+    
+    const intersectionName = circle.intersectionName?.trim();
+    let displayName;
+    if (intersectionName) {
+      displayName = intersectionName;
     } else {
-      // 若游標在圖表外，則隱藏 tooltip
-      tooltip.style.display = 'none';
+      displayName = `(${circle.row},${circle.col})`;
     }
+    const text = `${displayName} - 方向: ${circle.spawnPoint.direction}`;
+
+    const startOption = new Option(text, value);
+    const endOption = new Option(text, value);
+
+    startSelector.add(startOption);
+    endSelector.add(endOption);
+  });
+  
+  // 恢復之前的選擇
+  startSelector.value = currentStart;
+  endSelector.value = currentEnd;
+}
+
+
+/**
+ * 處理路徑起點或終點選擇變更的事件
+ */
+function handlePathSelectionChange() {
+  const startValue = document.getElementById("pathStartPointSelector").value;
+  const endValue = document.getElementById("pathEndPointSelector").value;
+
+  if (startValue && endValue && startValue !== endValue) {
+    const [startRow, startCol] = startValue.split(',').map(Number);
+    const [endRow, endCol] = endValue.split(',').map(Number);
+    
+    const startNode = gridCircles.find(c => c.row === startRow && c.col === startCol);
+    const endNode = gridCircles.find(c => c.row === endRow && c.col === endCol);
+
+    if (startNode && endNode) {
+      customPath = findShortestPath(startNode, endNode);
+      if (!customPath) {
+        alert("找不到從起點到終點的路徑！");
+      }
+    } else {
+      customPath = null;
+    }
+  } else {
+    customPath = null;
+  }
+  
+  updateSpawnPointSelector();
+  
+  // 如果 "路徑" 選項存在，自動選中它
+  const spawnSelector = document.getElementById("spawnPointSelector");
+  if (customPath && Array.from(spawnSelector.options).some(opt => opt.value === 'custom_path')) {
+      spawnSelector.value = 'custom_path';
+      // 手動觸發 change 事件以更新時空圖
+      spawnSelector.dispatchEvent(new Event('change'));
+  }
+}
+
+/**
+ * 使用 Dijkstra 演算法尋找最短路徑
+ * @param {object} startNode - 起點 gridCircle
+ * @param {object} endNode - 終點 gridCircle
+ * @returns {Array|null} - 路徑陣列或 null
+ */
+function findShortestPath(startNode, endNode) {
+  const nodes = gridCircles.filter(c => c.selected);
+  if (!nodes.includes(startNode) || !nodes.includes(endNode)) return null;
+
+  const distances = new Map();
+  const previous = new Map();
+  const pq = new Set();
+
+  nodes.forEach(node => {
+    distances.set(node, Infinity);
+    previous.set(node, null);
+    pq.add(node);
   });
 
-  // 滑鼠離開畫布時隱藏 tooltip
-  stCanvas.addEventListener("mouseout", function() {
-    tooltip.style.display = "none";
-  });
-});
+  distances.set(startNode, 0);
+
+  while (pq.size > 0) {
+    let closestNode = null;
+    let minDistance = Infinity;
+    for (const node of pq) {
+      if (distances.get(node) < minDistance) {
+        minDistance = distances.get(node);
+        closestNode = node;
+      }
+    }
+    
+    if (closestNode === null || closestNode === endNode) break;
+    
+    pq.delete(closestNode);
+
+    const neighbors = getNeighbors(closestNode);
+    for (const { neighbor, distance } of neighbors) {
+      if (pq.has(neighbor)) {
+        const alt = distances.get(closestNode) + distance;
+        if (alt < distances.get(neighbor)) {
+          distances.set(neighbor, alt);
+          previous.set(neighbor, closestNode);
+        }
+      }
+    }
+  }
+
+  const path = [];
+  let currentNode = endNode;
+  while (currentNode) {
+    path.unshift(currentNode);
+    currentNode = previous.get(currentNode);
+  }
+
+  if (path[0] !== startNode) return null; // 未找到路徑
+
+  // 計算每個路口的行進方向
+  const detailedPath = [];
+  for (let i = 0; i < path.length; i++) {
+    const prev = i > 0 ? path[i - 1] : null;
+    const current = path[i];
+    const next = i < path.length - 1 ? path[i + 1] : null;
+    
+    const movement = getMovementAtIntersection(prev, current, next);
+    const distToNext = next ? (roadDistances[`${current.row},${current.col}-${next.row},${next.col}`] || roadDistances[`${next.row},${next.col}-${current.row},${current.col}`])?.distance || 0 : 0;
+
+    detailedPath.push({
+      intersection: current,
+      movement: movement,
+      distanceToNext: distToNext
+    });
+  }
+  
+  return detailedPath;
+}
+
+/**
+ * 獲取一個節點的所有鄰居及其距離
+ * @param {object} node - gridCircle 節點
+ * @returns {Array} - 鄰居節點和距離的陣列
+ */
+function getNeighbors(node) {
+    const neighbors = [];
+    for (const key in roadDistances) {
+        if (roadDistances[key].distance === -1) continue;
+
+        const [r1, c1, r2, c2] = key.split(/[,|-]/).map(Number);
+        
+        if (r1 === node.row && c1 === node.col) {
+            const neighborNode = gridCircles.find(c => c.row === r2 && c.col === c2);
+            if (neighborNode && neighborNode.selected) {
+                neighbors.push({ neighbor: neighborNode, distance: roadDistances[key].distance });
+            }
+        } else if (r2 === node.row && c2 === node.col) {
+            const neighborNode = gridCircles.find(c => c.row === r1 && c.col === c1);
+            if (neighborNode && neighborNode.selected) {
+                neighbors.push({ neighbor: neighborNode, distance: roadDistances[key].distance });
+            }
+        }
+    }
+    return neighbors;
+}
+
+/**
+ * 根據前、中、後三個路口，判斷在中路口的行進方向（直行、左轉、右轉）
+ * @param {object|null} prev - 前一個 gridCircle
+ * @param {object} current - 當前 gridCircle
+ * @param {object|null} next - 下一個 gridCircle
+ * @returns {string} - 行進方向代碼 (e.g., 'E', 'NL', 'ER')
+ */
+function getMovementAtIntersection(prev, current, next) {
+    if (!next) return 'END'; // 終點
+    if (!prev) { // 起點
+        const dr = next.row - current.row;
+        const dc = next.col - current.col;
+        if (dr === -1 && dc === 0) return 'N';
+        if (dr === 1 && dc === 0) return 'S';
+        if (dr === 0 && dc === 1) return 'E';
+        if (dr === 0 && dc === -1) return 'W';
+        if (dr === -1 && dc === 1) return 'NE';
+        if (dr === 1 && dc === -1) return 'SW';
+        if (dr === 1 && dc === 1) return 'SE';
+        if (dr === -1 && dc === -1) return 'NW';
+        return 'E'; // 預設
+    }
+
+    const in_dr = current.row - prev.row;
+    const in_dc = current.col - prev.col;
+    const out_dr = next.row - current.row;
+    const out_dc = next.col - current.col;
+    
+    const dirMap = {
+        '-1,0': 'N', '1,0': 'S', '0,1': 'E', '0,-1': 'W',
+        '-1,1': 'NE', '1,-1': 'SW', '1,1': 'SE', '-1,-1': 'NW'
+    };
+    
+    const inDir = dirMap[`${in_dr},${in_dc}`];
+    const outDir = dirMap[`${out_dr},${out_dc}`];
+
+    if (inDir === outDir) return outDir; // 直行
+
+    // 判斷轉向
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const inIndex = dirs.indexOf(inDir);
+    const outIndex = dirs.indexOf(outDir);
+    
+    let diff = outIndex - inIndex;
+    if (diff > 4) diff -= 8;
+    if (diff < -4) diff += 8;
+    
+    if (diff === 2 || diff === -6) return inDir + 'R'; // 右轉 (順時針差2)
+    if (diff === -2 || diff === 6) return inDir + 'L'; // 左轉 (逆時針差2)
+
+    return outDir; // 其他非標準轉向，視為直行
+}
